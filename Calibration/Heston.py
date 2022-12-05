@@ -136,7 +136,7 @@ def optimal_ab(r, tau, sigma_0, kappa, eta, theta, rho):
     
     return c1 - 12*np.sqrt(np.abs(c2)), c1 + 12*np.sqrt(np.abs(c2))
 
-def cos_method_Heston(tau, r, q, sigma_0, kappa, eta, theta, rho, S0, strikes, a, b, N, options_type):
+def cos_method_Heston(tau, r, q, sigma_0, kappa, eta, theta, rho, S0, strikes, N, options_type):
     # Cosine Fourier Expansion for evaluating vanilla options under Heston
     
     # tau: time to expiration (annualized) (must be a number)
@@ -148,6 +148,8 @@ def cos_method_Heston(tau, r, q, sigma_0, kappa, eta, theta, rho, S0, strikes, a
     # a,b: extremes of the interval to approximate
     # N: number of terms of the truncated expansion
     # options_type: binary np.array (1 for calls, 0 for puts)
+    
+    a, b = optimal_ab(r, tau, sigma_0, kappa, eta, theta, rho)
       
     x = np.log(S0/strikes) 
     aux = np.pi/(b-a)
