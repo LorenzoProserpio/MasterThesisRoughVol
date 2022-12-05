@@ -1,4 +1,68 @@
 import numpy as np
+import scipy.integrate
+
+#################### PUT-CALL PARITY #############################
+
+def put_call_parity(put, S0, strike, r, q, tau):
+    # Standard put_call_parity
+    return put + S0*np.exp(-q*tau) - strike*np.exp(-r*tau)
+
+def call_put_parity(call, S0, strike, r, q, tau):
+    return call - S0*np.exp(-q*tau) + strike*np.exp(-r*tau)
+
+
+
+##################### ANALYTIC HESTON ############################
+
+def phi_hest(u, tau, sigma_0, kappa, eta, theta, rho):
+    
+    # Compute the characteristic function for Heston Model
+    
+    # u: argument of the function (where you want to evaluate)
+    # tau: time to expiration
+    # sigma_0, kappa, eta, theta, rho: Heston parameters 
+
+    alpha_hat = -0.5 * u * (u + 1j)
+    beta = kappa - 1j * u * theta * rho
+    gamma = 0.5 * theta ** 2
+    d = np.sqrt(beta**2 - 4 * alpha_hat * gamma)
+    g = (beta - d) / (beta + d)
+    h = np.exp(-d*tau)
+    A_ = (beta - d)*tau - 2*np.log((g*h-1) / (g-1))
+    A = kappa * eta / (theta**2) * A_
+    B = (beta - d) / (theta**2) * (1 - h) / (1 - g*h)
+    return np.exp(A + B * sigma_0)
+
+def integral(x, tau, sigma_0, kappa, eta, theta, rho):
+    
+    # Pseudo-probabilities 
+    
+    # x: log-prices discounted
+    
+    integrand = (lambda u: np.real(np.exp((1j*u + 0.5)*x) * \
+                                   phi_hest(u - 0.5j, tau, sigma_0, kappa, eta, theta, rho)) / \
+                (u**2 + 0.25))
+    
+    i, err = scipy.integrate.quad_vec(integrand, 0, np.inf)
+    
+    return i
+
+def analytic_hest(S0, strikes, tau, r, q,  kappa, theta, rho, eta, sigma_0, options_type):
+    
+    # Pricing of vanilla options under analytic Heston
+    
+    a = np.log(S0/strikes) + (r-q)*tau 
+    i = integral(a, tau, sigma_0, kappa, eta, theta, rho)
+    
+    out = S0 * np.exp(-q*tau) - strikes * np.exp(-r*tau)/np.pi * i
+    
+    for k in range(len(out)):
+        if options_type[k] == 0:
+            out[k] = call_put_parity(out[k], S0, strikes[k], r, q, tau)
+    
+    return out
+
+###################### COS METHOD ################################
 
 def phi_hest_0(u, tau, r, q, sigma_0, kappa, eta, theta, rho):
     
@@ -47,10 +111,6 @@ def U_k_put(k, a, b):
     # Auxiliary for cos_method
     
     return 2./(b-a) * (psi_k(k, a, 0, a, b) - chi_k(k, a, 0, a, b))
-
-def put_call_parity(put, S0, strike, r, q, tau):
-    # Standard put_call_parity
-    return put + S0*np.exp(-q*tau) - strike*np.exp(-r*tau)
 
 def optimal_ab(r, tau, sigma_0, kappa, eta, theta, rho):
     # Compute the optimal interval for the truncation
