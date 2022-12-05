@@ -1,70 +1,113 @@
 import numpy as np
-from scipy.fft import fft
-from scipy.interpolate import CubicSpline
 
-def Heston_characteristic(r, q, T, sigma_0, kappa, eta, theta, rho, u):
+def phi_hest_0(u, tau, r, q, sigma_0, kappa, eta, theta, rho):
     
-    # Compute the characteristic function for Heston Model
+    # Compute the characteristic function for Heston Model with log_asset = 0
     
+    # u: argument of the function (where you want to evaluate)
     # r: risk-free-rate
     # q: annual percentage yield
-    # T: time to expiration
-    # sigma_0, kappa, eta, theta, rho: Heston parameters
+    # tau: time to expiration
+    # sigma_0, kappa, eta, theta, rho: Heston parameters 
     
+    beta = (kappa - 1j*rho*u*theta)
+    d = np.sqrt(beta**2 + (theta**2)*(1j*u+u**2))    
+    r_minus = (beta - d)
+    g = r_minus/(beta + d)    
+    aux = np.exp(-d*tau)
     
-    aux = (rho*theta*u*1j - kappa)
-    d = np.sqrt(aux**2. - theta**2.*(-1j*u - u**2.))
+    term_1 = sigma_0/(theta**2) *  ((1-aux)/(1-g*aux)) * r_minus
+    term_2 = kappa*eta/(theta**2) * (tau*r_minus - 2*np.log((1-g*aux) / (1-g)))                    
+    term_3 = 1j*(r-q)*u*tau
+                    
+    return np.exp(term_1)*np.exp(term_2)*np.exp(term_3)
     
-    g = (-aux - d)/(-aux + d)
+def chi_k(k, c, d, a, b):
+    # Auxiliary function for U_k
     
-    p1 = 1j*u*(r-q)*T
-    aux_2 = np.exp(-d*T)
-    p2 = eta*kappa*theta**(-2.)*((-aux -d)*T - 2.*np.log((1 - g*aux_2)/(1 - g)))
-    p3 = sigma_0**2.*theta**(-2.)*(-aux - d)*(1 - aux_2)/(1 - g*aux_2)
+    aux_1 = k*np.pi/(b-a)
+    aux_2 = np.exp(d)
+    aux_3 = np.exp(c)
     
-    return np.exp(p1)*np.exp(p2)*np.exp(p3)
+    return  (np.cos(aux_1*(d-a))*aux_2 - \
+            np.cos(aux_1*(c-a))*aux_3 + \
+            aux_1*np.sin(aux_1*(d-a))*aux_2 - \
+            aux_1*np.sin(aux_1*(c-a))*aux_3) / (1+aux_1**2)
 
-def Heston_FFT(K, r, q, T, sigma_0, kappa, eta, theta, rho, Option_type = 1, integral_rule = 0):
+def psi_k(k, c, d, a, b):    
+    # Auxiliary function for U_k
     
-    # Compute call and put prices given strikes with Heston model, using FFT method proposed by Carr-Madan
+    if k == 0:
+        return d - c
     
-    # K: np.array of strikes
-    # r: risk-free-rate
-    # q: annual percentage yield
-    # T: time to expiration
+    aux = k*np.pi/(b-a)
+    return (np.sin(aux*(d-a)) - np.sin(aux*(c-a))) / aux
+    
+def U_k_put(k, a, b):
+    # Auxiliary for cos_method
+    
+    return 2./(b-a) * (psi_k(k, a, 0, a, b) - chi_k(k, a, 0, a, b))
+
+def put_call_parity(put, S0, strike, r, q, tau):
+    # Standard put_call_parity
+    return put + S0*np.exp(-q*tau) - strike*np.exp(-r*tau)
+
+def optimal_ab(r, tau, sigma_0, kappa, eta, theta, rho):
+    # Compute the optimal interval for the truncation
+    
+    L = 12
+    c1 = r * tau \
+            + (1 - np.exp(-kappa* tau)) \
+            * (eta - sigma_0)/2/kappa - eta * tau / 2
+
+    c2 = 1/(8 * kappa**3) \
+            * (theta * tau* kappa * np.exp(-kappa * tau) \
+            * (sigma_0 - eta) * (8 * kappa * rho - 4 * theta) \
+            + kappa * rho * theta * (1 - np.exp(-kappa * tau)) \
+            * (16 * eta - 8 * sigma_0) + 2 * eta * kappa * tau \
+            * (-4 * kappa * rho * theta + theta**2 + 4 * kappa**2) \
+            + theta**2 * ((eta - 2 * sigma_0) * np.exp(-2*kappa*tau) \
+            + eta * (6 * np.exp(-kappa*tau) - 7) + 2 * sigma_0) \
+            + 8 * kappa**2 * (sigma_0 - eta) * (1 - np.exp(-kappa*tau)))
+
+    a = c1 - L * np.abs(c2)**.5
+    b = c1 + L * np.abs(c2)**.5
+    
+    
+    return c1 - 12*np.sqrt(np.abs(c2)), c1 + 12*np.sqrt(np.abs(c2))
+
+def cos_method_Heston(tau, r, q, sigma_0, kappa, eta, theta, rho, S0, strikes, a, b, N, options_type):
+    # Cosine Fourier Expansion for evaluating vanilla options under Heston
+    
+    # tau: time to expiration (annualized) (must be a number)
+    # r: risk-free-rate 
+    # q: yield
     # sigma_0, kappa, eta, theta, rho: Heston parameters
-    # Option_type: 1 for calls, 0 for puts
-    # integral_rule: 1 for Cavalieri-Simpson, 0 for rectangular
+    # S0: initial spot price
+    # strikes: np.array of strikes
+    # a,b: extremes of the interval to approximate
+    # N: number of terms of the truncated expansion
+    # options_type: binary np.array (1 for calls, 0 for puts)
+      
+    x = np.log(S0/strikes) 
+    aux = np.pi/(b-a)
     
-    N = 4096
-    alpha = 1.5
-    eta = 0.25
-    lambda_ = 2.*np.pi/(N*eta)
-    b = lambda_*N/2.
+    # first term
+    out = 0.5 * phi_hest_0(0, tau, r, q, sigma_0, kappa, eta, theta, rho) \
+        * U_k_put(0,a,b)
     
-    k = np.linspace(-b, b-lambda_, int(np.floor(2*b/lambda_)))
-    
-    v = np.linspace(0, (N-1)*eta, N)
-    u = v - (alpha + 1)*1j
-    rho = np.exp(-r*T)*Heston_characteristic(r, q, T, sigma_0, kappa, eta, theta, rho, u)
-    rho = rho/(alpha**2. + alpha - v**2. + 1j*(2*alpha +1)*v)
-    
-    if integral_rule:
-        simp = np.concatenate(([1./3.],(3+(-1)**np.arange(2,4096+1))/3))
-        a = np.real(fft(np.exp(1j*v*b)*rho*eta*simp))
-    else:
-        a = np.real(fft(np.exp(1j*v*b)*rho*eta))
-    
-    call_price = (1./np.pi)*np.exp(-alpha*k)*a
-    
-    try:
-        inter_K = CubicSpline(np.exp(k), call_price)
-        out = inter_K(K)
-    
-    except:
-        out = 1e8*np.ones(K.shape[0])
+    # other terms
+    for k in range(1,N):
+        out = out + phi_hest_0(k*aux, tau, r, q, sigma_0, kappa, eta, theta, rho) \
+        * U_k_put(k,a,b) * np.exp(1j*k*aux*(x - a))
         
-    if Option_type == 0:
-        out = out + K*np.exp(-r*T) - np.exp(-q*T)
-        
+    out = out.real
+    out = strikes*out*np.exp(-r*tau)
+    
+    
+    for k in range(len(strikes)):
+        if options_type[k] == 1:
+            out[k] = put_call_parity(out[k], S0, strikes[k], r, q, tau)
+
     return out
+
