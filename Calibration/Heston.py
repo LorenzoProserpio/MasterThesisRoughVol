@@ -112,10 +112,9 @@ def U_k_put(k, a, b):
     
     return 2./(b-a) * (psi_k(k, a, 0, a, b) - chi_k(k, a, 0, a, b))
 
-def optimal_ab(r, tau, sigma_0, kappa, eta, theta, rho):
+def optimal_ab(r, tau, sigma_0, kappa, eta, theta, rho, L = 12):
     # Compute the optimal interval for the truncation
     
-    L = 12
     c1 = r * tau \
             + (1 - np.exp(-kappa* tau)) \
             * (eta - sigma_0)/2/kappa - eta * tau / 2
@@ -136,7 +135,7 @@ def optimal_ab(r, tau, sigma_0, kappa, eta, theta, rho):
     
     return c1 - 12*np.sqrt(np.abs(c2)), c1 + 12*np.sqrt(np.abs(c2))
 
-def cos_method_Heston(tau, r, q, sigma_0, kappa, eta, theta, rho, S0, strikes, N, options_type):
+def cos_method_Heston(tau, r, q, sigma_0, kappa, eta, theta, rho, S0, strikes, N, options_type, L=12):
     # Cosine Fourier Expansion for evaluating vanilla options under Heston
     
     # tau: time to expiration (annualized) (must be a number)
@@ -148,8 +147,9 @@ def cos_method_Heston(tau, r, q, sigma_0, kappa, eta, theta, rho, S0, strikes, N
     # a,b: extremes of the interval to approximate
     # N: number of terms of the truncated expansion
     # options_type: binary np.array (1 for calls, 0 for puts)
+    # L: truncation level
     
-    a, b = optimal_ab(r, tau, sigma_0, kappa, eta, theta, rho)
+    a, b = optimal_ab(r, tau, sigma_0, kappa, eta, theta, rho, L)
       
     x = np.log(S0/strikes) 
     aux = np.pi/(b-a)
@@ -164,12 +164,67 @@ def cos_method_Heston(tau, r, q, sigma_0, kappa, eta, theta, rho, S0, strikes, N
         * U_k_put(k,a,b) * np.exp(1j*k*aux*(x - a))
         
     out = out.real
-    out = strikes*out*np.exp(-r*tau)
+    D = np.exp(-r*tau)
+    out = strikes*out*D
     
+    for k in range(len(strikes)):
+        if options_type[k] == 1:
+            out[k] = put_call_parity(out[k], S0, strikes[k], r, q, tau)
+        
+    return out
+
+
+
+###################### COS METHOD Le Floch #########################
+
+def precomputed_terms(r, q, tau, sigma_0, kappa, eta, theta, rho, L, N):
+    # Auxiliary term precomputed
+    
+    a,b = optimal_ab(r, tau, sigma_0, kappa, eta, theta, rho, L)
+    aux = np.pi/(b-a)
+    out = np.zeros(N-1)
+    
+    for k in range(1,N):
+        out[k-1] = np.real(np.exp(-1j*k*a*aux)*\
+                         phi_hest_0(k*aux, tau, r, q, sigma_0, kappa, eta, theta, rho))
+    
+    return out, a, b
+
+def V_k_put(k, a, b, F, K, z):
+    # V_k coefficients for puts   
+    
+    return 2./(b-a)*(K*psi_k(k, a, z, a, b) - F*chi_k(k, a, z, a, b))
+
+def cos_method_Heston_LF(precomp_term, a, b, tau, r, q, sigma_0, kappa, eta, theta, rho, S0,\
+                         strikes, N, options_type, L=12):
+    # Cosine Fourier Expansion for evaluating vanilla options under Heston using LeFloch correction
+    # Should be better for deep otm options.
+    
+    # precomp_term: precomputed terms from the function precomputed_terms
+    # a,b: extremes of the interval to approximate
+    # tau: time to expiration (annualized) (must be a number)
+    # r: risk-free-rate 
+    # q: yield
+    # sigma_0, kappa, eta, theta, rho: Heston parameters
+    # S0: initial spot price
+    # strikes: np.array of strikes
+    # N: number of terms of the truncated expansion
+    # options_type: binary np.array (1 for calls, 0 for puts)
+    # L: truncation level
+
+    z = np.log(strikes/S0)
+    
+    out = 0.5 * np.real(phi_hest_0(0, tau, r, q, sigma_0, kappa, eta, theta, rho))*\
+          V_k_put(0, a, b, S0, strikes, z)
+    
+    for k in range(1,N):
+        out = out + precomp_term[k-1]*V_k_put(k, a, b, S0, strikes, z)
+    
+    D = np.exp(-r*tau)
+    out = out*D
     
     for k in range(len(strikes)):
         if options_type[k] == 1:
             out[k] = put_call_parity(out[k], S0, strikes[k], r, q, tau)
 
     return out
-
