@@ -224,6 +224,10 @@ def cos_method_Heston_LF(precomp_term, a, b, tau, r, q, sigma_0, kappa, eta, the
     out = out*D
     
     for k in range(len(strikes)):
+        if z[k] > - a -(r-q)*tau:
+            out[k] = 0
+        if z[k] < - b -(r-q)*tau:
+            out[k] = D*(K-S0)
         if options_type[k] == 1:
             out[k] = put_call_parity(out[k], S0, strikes[k], r, q, tau)
 
