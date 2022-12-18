@@ -190,10 +190,10 @@ def precomputed_terms(r, q, tau, sigma_0, kappa, eta, theta, rho, L, N):
     
     return out, a, b
 
-def V_k_put(k, a, b, F, K, z):
+def V_k_put(k, a, b, S0, K, z):
     # V_k coefficients for puts   
     
-    return 2./(b-a)*(K*psi_k(k, a, z, a, b) - F*chi_k(k, a, z, a, b))
+    return 2./(b-a)*(K*psi_k(k, a, z, a, b) - S0*chi_k(k, a, z, a, b))
 
 def cos_method_Heston_LF(precomp_term, a, b, tau, r, q, sigma_0, kappa, eta, theta, rho, S0,\
                          strikes, N, options_type, L=12):
@@ -224,10 +224,6 @@ def cos_method_Heston_LF(precomp_term, a, b, tau, r, q, sigma_0, kappa, eta, the
     out = out*D
     
     for k in range(len(strikes)):
-        if z[k] > - a -(r-q)*tau:
-            out[k] = 0
-        if z[k] < - b -(r-q)*tau:
-            out[k] = D*(K-S0)
         if options_type[k] == 1:
             out[k] = put_call_parity(out[k], S0, strikes[k], r, q, tau)
 
