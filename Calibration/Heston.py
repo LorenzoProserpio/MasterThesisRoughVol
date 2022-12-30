@@ -62,7 +62,7 @@ def analytic_hest(S0, strikes, tau, r, q,  kappa, theta, rho, eta, sigma_0, opti
     
     return out
 
-###################### COS METHOD ################################
+###################### COS METHOD Le Floch #########################
 
 def phi_hest_0(u, tau, r, q, sigma_0, kappa, eta, theta, rho):
     
@@ -94,9 +94,8 @@ def chi_k(k, c, d, a, b):
     aux_3 = np.exp(c)
     
     return  (np.cos(aux_1*(d-a))*aux_2 - \
-            np.cos(aux_1*(c-a))*aux_3 + \
-            aux_1*np.sin(aux_1*(d-a))*aux_2 - \
-            aux_1*np.sin(aux_1*(c-a))*aux_3) / (1+aux_1**2)
+            aux_3 + \
+            aux_1*np.sin(aux_1*(d-a))*aux_2) / (1+aux_1**2)
 
 def psi_k(k, c, d, a, b):    
     # Auxiliary function for U_k
@@ -105,7 +104,7 @@ def psi_k(k, c, d, a, b):
         return d - c
     
     aux = k*np.pi/(b-a)
-    return (np.sin(aux*(d-a)) - np.sin(aux*(c-a))) / aux
+    return np.sin(aux*(d-a)) / aux
     
 def U_k_put(k, a, b):
     # Auxiliary for cos_method
@@ -114,68 +113,35 @@ def U_k_put(k, a, b):
 
 def optimal_ab(r, tau, sigma_0, kappa, eta, theta, rho, L = 12):
     # Compute the optimal interval for the truncation
+    aux = np.exp(-kappa* tau)
+    c1 =  (1 - aux) \
+            * (eta - sigma_0)/(2*kappa) - eta * tau / 2
+
+#     c2 = 1/(8 * kappa**3) \
+#             * (theta * tau* kappa * np.exp(-kappa * tau) \
+#             * (sigma_0 - eta) * (8 * kappa * rho - 4 * theta) \
+#             + kappa * rho * theta * (1 - np.exp(-kappa * tau)) \
+#             * (16 * eta - 8 * sigma_0) + 2 * eta * kappa * tau \
+#             * (-4 * kappa * rho * theta + theta**2 + 4 * kappa**2) \
+#             + theta**2 * ((eta - 2 * sigma_0) * np.exp(-2*kappa*tau) \
+#             + eta * (6 * np.exp(-kappa*tau) - 7) + 2 * sigma_0) \
+#             + 8 * kappa**2 * (sigma_0 - eta) * (1 - np.exp(-kappa*tau)))
+
+    c2 = (sigma_0) / (4*kappa**3) * (4*kappa**2*(1+(rho*theta*tau-1)*aux) \
+                                    + kappa*(4*rho*theta*(aux-1)\
+                                             -2*theta**2*tau*aux) \
+                                    +theta**2*(1-aux*aux)) \
+        + eta/(8*kappa**3)*(8*kappa**3*tau - 8*kappa**2*(1+ rho*theta*tau +(rho*theta*tau-1)*aux)\
+                            + 2*kappa*((1+2*aux)*theta**2*tau+8*(1-aux)*rho*theta)\
+                            + theta**2*(aux*aux+4*aux-5))
     
-    c1 = r * tau \
-            + (1 - np.exp(-kappa* tau)) \
-            * (eta - sigma_0)/2/kappa - eta * tau / 2
-
-    c2 = 1/(8 * kappa**3) \
-            * (theta * tau* kappa * np.exp(-kappa * tau) \
-            * (sigma_0 - eta) * (8 * kappa * rho - 4 * theta) \
-            + kappa * rho * theta * (1 - np.exp(-kappa * tau)) \
-            * (16 * eta - 8 * sigma_0) + 2 * eta * kappa * tau \
-            * (-4 * kappa * rho * theta + theta**2 + 4 * kappa**2) \
-            + theta**2 * ((eta - 2 * sigma_0) * np.exp(-2*kappa*tau) \
-            + eta * (6 * np.exp(-kappa*tau) - 7) + 2 * sigma_0) \
-            + 8 * kappa**2 * (sigma_0 - eta) * (1 - np.exp(-kappa*tau)))
-
+    
     a = c1 - L * np.abs(c2)**.5
     b = c1 + L * np.abs(c2)**.5
     
     
     return c1 - 12*np.sqrt(np.abs(c2)), c1 + 12*np.sqrt(np.abs(c2))
 
-def cos_method_Heston(tau, r, q, sigma_0, kappa, eta, theta, rho, S0, strikes, N, options_type, L=12):
-    # Cosine Fourier Expansion for evaluating vanilla options under Heston
-    
-    # tau: time to expiration (annualized) (must be a number)
-    # r: risk-free-rate 
-    # q: yield
-    # sigma_0, kappa, eta, theta, rho: Heston parameters
-    # S0: initial spot price
-    # strikes: np.array of strikes
-    # a,b: extremes of the interval to approximate
-    # N: number of terms of the truncated expansion
-    # options_type: binary np.array (1 for calls, 0 for puts)
-    # L: truncation level
-    
-    a, b = optimal_ab(r, tau, sigma_0, kappa, eta, theta, rho, L)
-      
-    x = np.log(S0/strikes) 
-    aux = np.pi/(b-a)
-    
-    # first term
-    out = 0.5 * phi_hest_0(0, tau, r, q, sigma_0, kappa, eta, theta, rho) \
-        * U_k_put(0,a,b)
-    
-    # other terms
-    for k in range(1,N):
-        out = out + phi_hest_0(k*aux, tau, r, q, sigma_0, kappa, eta, theta, rho) \
-        * U_k_put(k,a,b) * np.exp(1j*k*aux*(x - a))
-        
-    out = out.real
-    D = np.exp(-r*tau)
-    out = strikes*out*D
-    
-    for k in range(len(strikes)):
-        if options_type[k] == 1:
-            out[k] = put_call_parity(out[k], S0, strikes[k], r, q, tau)
-        
-    return out
-
-
-
-###################### COS METHOD Le Floch #########################
 
 def precomputed_terms(r, q, tau, sigma_0, kappa, eta, theta, rho, L, N):
     # Auxiliary term precomputed
