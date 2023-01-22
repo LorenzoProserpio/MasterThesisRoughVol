@@ -194,3 +194,70 @@ def cos_method_Heston_LF(precomp_term, a, b, tau, r, q, sigma_0, kappa, eta, the
             out[k] = put_call_parity(out[k], S0, strikes[k], r, q, tau)
 
     return out
+
+#######################Gradient Heston################################
+# Da sistemare
+######################################################################
+
+def grad_h(u, tau, sigma_0, kappa, eta, theta, rho, S0, r, q):
+    # Gradient of the Heston characteristic function (Le Cui)
+    
+    h = np.zeros(5, dtype = complex)  
+    
+    eps = kappa - theta*rho*1j*u
+    d = np.sqrt(eps**2 + theta**2*(u**2+1j*u))
+    aux1 = np.cosh(d*tau/2)
+    aux2 = np.sinh(d*tau/2)
+    A1 = (u**2+1j*u)*aux2
+    A2 = d*aux1 + eps*aux2
+    B = d*np.exp(kappa*tau/2)/A2
+    D = np.log(B)
+    A = A1/A2
+    
+    # partial derivatives
+    
+    dp = -eps*theta*1j*u/d
+    A2p = - theta*1j*u*(2+tau*eps)/(2*d)*(eps*aux1 + d*aux2)
+    A1p = - (1j*u*(u**2+1j*u)*tau*eps*theta/(2*d))*aux1
+    Ap = 1./A2*A1p - A/A2*A2p
+    
+    Bk = 1j*np.exp(kappa*tau/2)/(theta*u)*(1/A2*dp-d/(A2**2)*A2p) + tau*B/2
+    
+    dt = (rho/theta - 1/eps)*dp + theta*u**2/d
+    A1t = (u**2+1j*u)*tau/2*dt*aux1
+    A2t = rho/theta*A2p - (2+tau*eps)/(1j*u*tau*eps)*A1p + theta*tau*A1/2
+    At = 1/A2 * A1t - A/A2 * A2t
+    
+    # h
+    
+    h[0] = -A
+    h[1] = 2*kappa*D/theta**2 - tau*kappa*rho*1j*u/theta
+    h[2] = -sigma_0**2 * Ap + 2*kappa*eta/(theta**2*d)*(dp-d/A2*A2p)-\
+            tau*kappa*eta*1j*u/theta
+    h[3] = sigma_0**2/(theta*1j*u)*Ap + 2*eta/(theta**2)*D \
+           + 2*kappa*eta/(theta**2*B)*Bk-tau*rho*eta*1j*u/theta
+    h[4] = -sigma_0**2 *At - 4*kappa*eta/(theta**3)*D + 2*kappa*eta/(theta**2*d)*\
+           (dt - d/A2*A2t) + tau*rho*eta*kappa*1j*u/(theta**2)
+    
+    # phi
+    phi = np.exp(1j*u*(np.log(S0) + (r-q)*tau))*np.exp(-tau*kappa*eta*rho*1j*u/theta)*np.exp(-\
+                      sigma_0**2*A + 2*kappa*eta/(theta**2)*D)
+    
+    return phi*h
+
+def grad_c(tau, strikes, sigma_0, kappa, eta, theta, rho, S0, r, q, num, a, b):
+    # gradient of a European call (or put, it makes no difference) using Gauss-Legendre integration
+    
+    [u,w] = np.polynomial.legendre.leggauss(num)
+    length = strikes.shape[0]
+    out = np.zeros((length,5))
+    
+    for k in range(length):
+        for i in range(num):
+            out[k,:] += np.real(strikes[k]**(-1j*u[i])/(1j*u[i])*\
+                                grad_h(u[i] - 1j, tau, sigma_0, kappa, eta, theta, rho, S0, r, q))*w[i] - \
+                        strikes[k]*np.real(strikes[k]**(-1j*u[i])/(1j*u[i])*\
+                                grad_h(u[i], tau, sigma_0, kappa, eta, theta, rho, S0, r, q))*w[i]   
+    
+    return np.exp(-(r-q)*tau)/np.pi*out
+    
