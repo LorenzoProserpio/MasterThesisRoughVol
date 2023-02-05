@@ -1,5 +1,6 @@
 import numpy as np
 import scipy.integrate
+from scipy.special import iv
 
 #################### PUT-CALL PARITY #############################
 
@@ -261,3 +262,69 @@ def grad_c(tau, strikes, sigma_0, kappa, eta, theta, rho, S0, r, q, num, a, b):
     
     return np.exp(-(r-q)*tau)/np.pi*out
     
+#######################Simulation Heston################################
+
+def create_totems(base, start, end):
+    totems = np.ones(end-start+1)
+    index = 0
+    for j in range(start, end+1):
+        totems[index] = base**j
+        index += 1
+    return totems
+
+def calc_nu_bar(kappa, eta, theta):
+    return 4*kappa*eta/theta**2
+
+def x2_exp_var(nu_bar, kappa, theta, dt):
+    aux = kappa*dt/2.
+    c1 = np.cosh(aux)/np.sinh(aux)
+    c2 = (1./np.sinh(aux))**2
+    exp_x2 = nu_bar*theta**2*((-2.+kappa*dt*c1)/(4*kappa**2))
+    var_x2 = nu_bar*theta**4*((-8.+2*kappa*dt*c1+\
+                              kappa**2*dt**2*c2)/(8*kappa**4))
+    return exp_x2, var_x2
+
+def Z_exp_var(nu_bar, exp_x2, var_x2):
+    return 4*exp_x2/nu_bar, 4*var_x2/nu_bar
+
+def xi_exp(nu_bar, kappa, theta, dt, totem):
+    z = 2*kappa*np.sqrt(totem) / (theta**2*np.sinh(kappa*dt/2.))
+    
+    iv_pre = iv(nu_bar/2.-1., z)
+    
+    exp_xi = (z*iv(nu_bar/2.,z))/(2*iv_pre)
+    exp_xi2 = exp_xi + (z**2*iv(nu_bar/2.+1,z))/(4.*iv_pre)
+    return exp_xi, exp_xi2
+
+def create_caches(base, start, end, kappa, eta, theta, dt):
+    totems = create_totems(base, start, end)
+    caches_exp = np.zeros(end-start+1)
+    caches_var = np.zeros(end-start+1)
+    nu_bar = calc_nu_bar(kappa, eta, theta)
+    exp_x2, var_x2 = x2_exp_var(nu_bar, kappa, theta, dt)
+    exp_Z, var_Z = Z_exp_var(nu_bar, exp_x2, var_x2)
+    
+    for j in range(end-start+1):
+        exp_xi, exp_xi2 = xi_exp(nu_bar, kappa, theta, dt, totems[j])
+        caches_exp[j] = exp_x2 + exp_xi*exp_Z
+        caches_var[j] = var_x2 + exp_xi*var_Z + \
+                        (exp_xi2-exp_xi**2)*exp_Z**2
+        
+    return totems, caches_exp, caches_var
+
+def x1_exp_var(kappa, theta, dt, vt, vT):
+    aux = kappa*dt/2.
+    c1 = np.cosh(aux)/np.sinh(aux)
+    c2 = (1./np.sinh(aux))**2
+    
+    exp_x1 = (vt + vT)*(c1/kappa - dt*c2/2)
+    var_x1 = (vt + vT)*theta**2*(c1/kappa**3 + dt*c2/(2*kappa**2) \
+                                - dt**2*c1*c2/(2*kappa))
+    
+    return exp_x1, var_x1
+
+def lin_interp(vtvT, totems, caches_exp, caches_var):
+    exp_int = np.interp(vtvT, totems, caches_exp)
+    var_int = np.interp(vtvT, totems, caches_var)
+    return exp_int, var_int
+
