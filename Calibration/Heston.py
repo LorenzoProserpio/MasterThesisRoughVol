@@ -265,17 +265,24 @@ def grad_c(tau, strikes, sigma_0, kappa, eta, theta, rho, S0, r, q, num, a, b):
 #######################Simulation Heston################################
 
 def create_totems(base, start, end):
-    totems = np.ones(end-start+1)
-    index = 0
+    # create the grid 
+    
+    totems = np.ones(end-start+2)
+    index = 1
     for j in range(start, end+1):
         totems[index] = base**j
         index += 1
+        
+    totems[0] = 0
     return totems
 
 def calc_nu_bar(kappa, eta, theta):
+    # compute v bar
     return 4*kappa*eta/theta**2
 
 def x2_exp_var(nu_bar, kappa, theta, dt):
+    # compute E[X_2] and Var[X_2]
+    
     aux = kappa*dt/2.
     c1 = np.cosh(aux)/np.sinh(aux)
     c2 = (1./np.sinh(aux))**2
@@ -285,34 +292,43 @@ def x2_exp_var(nu_bar, kappa, theta, dt):
     return exp_x2, var_x2
 
 def Z_exp_var(nu_bar, exp_x2, var_x2):
+    # compute E[Z] and Var[Z]
+    
     return 4*exp_x2/nu_bar, 4*var_x2/nu_bar
 
 def xi_exp(nu_bar, kappa, theta, dt, totem):
+    # compute E[\Xi] and E[\Xi^2]
+    
     z = 2*kappa*np.sqrt(totem) / (theta**2*np.sinh(kappa*dt/2.))
+    iv_pre = ive(nu_bar/2.-1., z)    
+    exp_xi = (z*ive(nu_bar/2.,z))/(2*iv_pre)
+    exp_xi2 = exp_xi + (z**2*ive(nu_bar/2.+1,z))/(4.*iv_pre)    
     
-    iv_pre = iv(nu_bar/2.-1., z)
-    
-    exp_xi = (z*iv(nu_bar/2.,z))/(2*iv_pre)
-    exp_xi2 = exp_xi + (z**2*iv(nu_bar/2.+1,z))/(4.*iv_pre)
     return exp_xi, exp_xi2
 
 def create_caches(base, start, end, kappa, eta, theta, dt):
+    # precompute the caches for IV*
+    
     totems = create_totems(base, start, end)
-    caches_exp = np.zeros(end-start+1)
-    caches_var = np.zeros(end-start+1)
+    caches_exp = np.zeros(end-start+2)
+    caches_var = np.zeros(end-start+2)
     nu_bar = calc_nu_bar(kappa, eta, theta)
     exp_x2, var_x2 = x2_exp_var(nu_bar, kappa, theta, dt)
     exp_Z, var_Z = Z_exp_var(nu_bar, exp_x2, var_x2)
     
-    for j in range(end-start+1):
+    for j in range(1,end-start+2):
         exp_xi, exp_xi2 = xi_exp(nu_bar, kappa, theta, dt, totems[j])
         caches_exp[j] = exp_x2 + exp_xi*exp_Z
         caches_var[j] = var_x2 + exp_xi*var_Z + \
                         (exp_xi2-exp_xi**2)*exp_Z**2
         
+    caches_exp[0] = exp_x2
+    caches_var[0] = var_x2
     return totems, caches_exp, caches_var
 
 def x1_exp_var(kappa, theta, dt, vt, vT):
+    # compute E[X_1] and Var[X_1]
+    
     aux = kappa*dt/2.
     c1 = np.cosh(aux)/np.sinh(aux)
     c2 = (1./np.sinh(aux))**2
@@ -324,7 +340,66 @@ def x1_exp_var(kappa, theta, dt, vt, vT):
     return exp_x1, var_x1
 
 def lin_interp(vtvT, totems, caches_exp, caches_var):
+    # compute linear interpolation for value not in caches
+    
     exp_int = np.interp(vtvT, totems, caches_exp)
     var_int = np.interp(vtvT, totems, caches_var)
     return exp_int, var_int
 
+def sample_vT(vt, dt, kappa, theta, nu_bar):
+    # sample vT from a noncentral chisquare (given vt)
+    
+    aux = (theta**2*(1-np.exp(-kappa*dt)))/(4*kappa)
+    n = np.exp(-kappa*dt)/aux *vt
+    return np.random.noncentral_chisquare(nu_bar, n)*aux
+
+def generate_path(S0, T, dt, kappa, eta, theta, rho, r, q, sigma_0, totems, caches_exp, caches_var):
+    # This function generate one path for the Heston model using the Gamma Approx algorithm
+    
+    # T: final time
+    # r: risk-free-rate 
+    # q: yield
+    # sigma_0, kappa, eta, theta, rho: Heston parameters
+    # S0: initial spot price
+    # dt: temporal step
+    # totems, caches_exp, caches_var: precomputed grid, caches for expectation and caches for var
+    
+    t = dt
+    index = 0
+    vt = sigma_0
+    xt = np.log(S0)
+    
+    path = np.zeros(int(np.ceil(T/dt))+1)
+    path[0] = S0
+    
+    variance = np.zeros(int(np.ceil(T/dt))+1)
+    variance[0] = vt
+    
+    nu_bar = calc_nu_bar(kappa, eta, theta)
+    
+    while t < T:
+        vT = sample_vT(vt, dt, kappa, theta, nu_bar)
+        
+        exp_int, var_int = lin_interp(vt*vT, totems, caches_exp, caches_var)
+       
+        exp_x1, var_x1 = x1_exp_var(kappa, theta, dt, vt, vT)
+        exp_int += exp_x1
+        var_int += var_x1
+        
+        gamma_t = var_int/exp_int
+        gamma_k = exp_int**2/var_int  
+        
+        iv_t = np.random.gamma(gamma_k, gamma_t)
+        z = np.random.normal()
+        
+        xt += (r-q)*dt + (- 0.5 + kappa*rho/theta)*iv_t + \
+              rho/theta*(vT-vt-kappa*eta*dt) + \
+              z*np.sqrt(1-rho**2)*np.sqrt(iv_t)
+        
+        index += 1
+        path[index] = np.exp(xt)
+        vt = vT
+        variance[index] = vt        
+        t += dt
+        
+    return path[:-1], variance[:-1]
