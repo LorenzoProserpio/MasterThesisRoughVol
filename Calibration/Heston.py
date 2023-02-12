@@ -1,6 +1,6 @@
 import numpy as np
 import scipy.integrate
-from scipy.special import iv
+from scipy.special import ive
 
 #################### PUT-CALL PARITY #############################
 
