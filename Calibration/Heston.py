@@ -1,4 +1,5 @@
 import numpy as np
+import QuantLib as ql
 import scipy.integrate
 from scipy.special import ive
 
@@ -118,16 +119,6 @@ def optimal_ab(r, tau, sigma_0, kappa, eta, theta, rho, L = 12):
     c1 =  (1 - aux) \
             * (eta - sigma_0)/(2*kappa) - eta * tau / 2
 
-#     c2 = 1/(8 * kappa**3) \
-#             * (theta * tau* kappa * np.exp(-kappa * tau) \
-#             * (sigma_0 - eta) * (8 * kappa * rho - 4 * theta) \
-#             + kappa * rho * theta * (1 - np.exp(-kappa * tau)) \
-#             * (16 * eta - 8 * sigma_0) + 2 * eta * kappa * tau \
-#             * (-4 * kappa * rho * theta + theta**2 + 4 * kappa**2) \
-#             + theta**2 * ((eta - 2 * sigma_0) * np.exp(-2*kappa*tau) \
-#             + eta * (6 * np.exp(-kappa*tau) - 7) + 2 * sigma_0) \
-#             + 8 * kappa**2 * (sigma_0 - eta) * (1 - np.exp(-kappa*tau)))
-
     c2 = (sigma_0) / (4*kappa**3) * (4*kappa**2*(1+(rho*theta*tau-1)*aux) \
                                     + kappa*(4*rho*theta*(aux-1)\
                                              -2*theta**2*tau*aux) \
@@ -196,71 +187,65 @@ def cos_method_Heston_LF(precomp_term, a, b, tau, r, q, sigma_0, kappa, eta, the
 
     return out
 
-#######################Gradient Heston################################
-# Da sistemare
-######################################################################
+#######################Calibration######################################
 
-def grad_h(u, tau, sigma_0, kappa, eta, theta, rho, S0, r, q):
-    # Gradient of the Heston characteristic function (Le Cui)
+def setup_model(_yield_ts, _dividend_ts, _spot, 
+                init_condition):
+    # Setup Heston model object
     
-    h = np.zeros(5, dtype = complex)  
+    # _yield_ts: Term Structure for yield (QuantLib object)
+    # _dividend_ts: Term Structure for dividend_ts (QuantLib object)
+    # init_condition: eta, kappa, theta, rho, sigma_0
     
-    eps = kappa - theta*rho*1j*u
-    d = np.sqrt(eps**2 + theta**2*(u**2+1j*u))
-    aux1 = np.cosh(d*tau/2)
-    aux2 = np.sinh(d*tau/2)
-    A1 = (u**2+1j*u)*aux2
-    A2 = d*aux1 + eps*aux2
-    B = d*np.exp(kappa*tau/2)/A2
-    D = np.log(B)
-    A = A1/A2
-    
-    # partial derivatives
-    
-    dp = -eps*theta*1j*u/d
-    A2p = - theta*1j*u*(2+tau*eps)/(2*d)*(eps*aux1 + d*aux2)
-    A1p = - (1j*u*(u**2+1j*u)*tau*eps*theta/(2*d))*aux1
-    Ap = 1./A2*A1p - A/A2*A2p
-    
-    Bk = 1j*np.exp(kappa*tau/2)/(theta*u)*(1/A2*dp-d/(A2**2)*A2p) + tau*B/2
-    
-    dt = (rho/theta - 1/eps)*dp + theta*u**2/d
-    A1t = (u**2+1j*u)*tau/2*dt*aux1
-    A2t = rho/theta*A2p - (2+tau*eps)/(1j*u*tau*eps)*A1p + theta*tau*A1/2
-    At = 1/A2 * A1t - A/A2 * A2t
-    
-    # h
-    
-    h[0] = -A
-    h[1] = 2*kappa*D/theta**2 - tau*kappa*rho*1j*u/theta
-    h[2] = -sigma_0**2 * Ap + 2*kappa*eta/(theta**2*d)*(dp-d/A2*A2p)-\
-            tau*kappa*eta*1j*u/theta
-    h[3] = sigma_0**2/(theta*1j*u)*Ap + 2*eta/(theta**2)*D \
-           + 2*kappa*eta/(theta**2*B)*Bk-tau*rho*eta*1j*u/theta
-    h[4] = -sigma_0**2 *At - 4*kappa*eta/(theta**3)*D + 2*kappa*eta/(theta**2*d)*\
-           (dt - d/A2*A2t) + tau*rho*eta*kappa*1j*u/(theta**2)
-    
-    # phi
-    phi = np.exp(1j*u*(np.log(S0) + (r-q)*tau))*np.exp(-tau*kappa*eta*rho*1j*u/theta)*np.exp(-\
-                      sigma_0**2*A + 2*kappa*eta/(theta**2)*D)
-    
-    return phi*h
+    eta, kappa, theta, rho, sigma_0 = init_condition
+    process = ql.HestonProcess(_yield_ts, _dividend_ts, 
+                           ql.QuoteHandle(ql.SimpleQuote(_spot)), 
+                           sigma_0, kappa, eta, theta, rho)
+    model = ql.HestonModel(process)
+    engine = ql.AnalyticHestonEngine(model) 
+    return model, engine
 
-def grad_c(tau, strikes, sigma_0, kappa, eta, theta, rho, S0, r, q, num, a, b):
-    # gradient of a European call (or put, it makes no difference) using Gauss-Legendre integration
+def setup_helpers(engine, expiration_dates, strikes, 
+                  data, ref_date, spot, yield_ts, 
+                  dividend_ts, calendar):
+    # Helpers for Heston Calibration
     
-    [u,w] = np.polynomial.legendre.leggauss(num)
-    length = strikes.shape[0]
-    out = np.zeros((length,5))
+    # engine: Heston.setup_model output
+    # expiration_dates: maturities
+    # data: IV market data
+    # ref_date: date for the calculation
+    # yield_ts: Term Structure for yield (QuantLib object)
+    # dividend_ts: Term Structure for dividend_ts (QuantLib object)
+    # calendar: type of calendar for calculations
     
-    for k in range(length):
-        for i in range(num):
-            out[k,:] += np.real(strikes[k]**(-1j*u[i])/(1j*u[i])*\
-                                grad_h(u[i] - 1j, tau, sigma_0, kappa, eta, theta, rho, S0, r, q))*w[i] - \
-                        strikes[k]*np.real(strikes[k]**(-1j*u[i])/(1j*u[i])*\
-                                grad_h(u[i], tau, sigma_0, kappa, eta, theta, rho, S0, r, q))*w[i]   
+    heston_helpers = []
+    grid_data = []
+    for i, date in enumerate(expiration_dates):
+        for j, s in enumerate(strikes):
+            t = (date - ref_date )
+            p = ql.Period(t, ql.Days)
+            vols = data[i][j]
+            helper = ql.HestonModelHelper(
+                p, calendar, spot, s, 
+                ql.QuoteHandle(ql.SimpleQuote(vols)),
+                yield_ts, dividend_ts)
+            helper.setPricingEngine(engine)
+            heston_helpers.append(helper)
+            grid_data.append((date, s))
+    return heston_helpers, grid_data
+
+def cost_function_generator(model, helpers, norm=False):
+    # Define cost function for the calibration (usually Mean Square Error)
     
-    return np.exp(-(r-q)*tau)/np.pi*out
+    def cost_function(params):
+        params_ = ql.Array(list(params))
+        model.setParams(params_)
+        error = [h.calibrationError() for h in helpers]
+        if norm:
+            return np.sqrt(np.sum(np.abs(error)))
+        else:
+            return error
+    return cost_function
     
 #######################Simulation Heston################################
 
