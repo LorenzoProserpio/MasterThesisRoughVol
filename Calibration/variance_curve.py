@@ -9,4 +9,5 @@ def g(t):
     return z1 * np.exp(-z2 * np.exp(-z3 * t))
     
 def variance_curve(t):
+    eps = 1e-8
     return g(t)**2 + t*(g(t+eps)**2 - g(t-eps)**2)/(2*eps)
