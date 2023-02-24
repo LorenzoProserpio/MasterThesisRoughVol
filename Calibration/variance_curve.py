@@ -1,3 +1,4 @@
+
 import numpy as np
 
 # Compute the initial forward variance curve at a given time t
@@ -12,4 +13,5 @@ def variance_curve(t):
     z1 = 0.23934445541427635
     z2 = 0.23559167522825925
     z3 = 0.19271882494190468
+    t = t * 12
     return g(t)**2 + 2*t*z1**2*z2*z3*np.exp(-2*z2*np.exp(-z3*t)-z3*t)
