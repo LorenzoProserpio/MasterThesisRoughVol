@@ -1,4 +1,6 @@
 import numpy as np
+from scipy.signal import convolve
+from numpy.random import default_rng
 from utils_rBergomi import *
 
 # Class for generating paths of the rBergomi model.
@@ -21,19 +23,23 @@ class rBergomi(object):
 
     def dW1(self):
         # Produces random numbers for variance process with required covariance structure
-        
+        #rng = default_rng()
+        #return rng.multivariate_normal(self.e, self.c, (self.N, self.s), method = 'cholesky')
         return np.random.multivariate_normal(self.e, self.c, (self.N, self.s))
+    
+    def dW2(self):
+        #Obtain orthogonal increments
+        #rng = default_rng(0)
+        #return rng.standard_normal((self.N, self.s)) * np.sqrt(self.dt)
+        return np.random.randn(self.N, self.s) * np.sqrt(self.dt)
 
     def Y(self, dW):
         #Constructs Volterra process from appropriately correlated 2d Brownian increments
         
-        
         Y1 = np.zeros((self.N, 1 + self.s)) # Exact integrals
         Y2 = np.zeros((self.N, 1 + self.s)) # Riemann sums
 
-        # Construct Y1 through exact integral
-        for i in np.arange(1, 1 + self.s, 1):
-            Y1[:,i] = dW[:,i-1,1] # Assumes kappa = 1
+        Y1[:,1 : self.s+1] = dW[:, :self.s, 1]   # Assumes kappa = 1
 
         # Construct arrays for convolution
         G = np.zeros(1 + self.s) # Gamma
@@ -42,32 +48,18 @@ class rBergomi(object):
 
         X = dW[:,:,0] # Xi
 
-        # Initialise convolution result, GX
-        GX = np.zeros((self.N, len(X[0,:]) + len(G) - 1))
-
-        # Compute convolution, FFT not used for small n
-        # Possible to compute for all paths in C-layer?
+        # Compute convolution and extract relevant terms
         for i in range(self.N):
-            GX[i,:] = np.convolve(G, X[i,:])
-
-        # Extract appropriate part of convolution
-        Y2 = GX[:,:1 + self.s]
+            Y2[i,:] = np.convolve(G, X[i,:])[:1+self.s]
 
         # Finally contruct and return full process
-        Y = np.sqrt(2 * self.a + 1) * (Y1 + Y2)
-        return Y
-
-    def dW2(self):
-        #Obtain orthogonal increments
-        
-        return np.random.randn(self.N, self.s) * np.sqrt(self.dt)
+        return np.sqrt(2 * self.a + 1) * (Y1 + Y2)
 
     def dZ(self, dW1, dW2, rho = 0.0):
         # Constructs correlated price Brownian increments, dB
         
         self.rho = rho
-        dZ = rho * dW1[:,:,0] + np.sqrt(1 - rho**2) * dW2
-        return dZ
+        return rho * dW1[:,:,0] + np.sqrt(1 - rho**2) * dW2
 
     def V(self, Y, xi = 1.0, eta = 1.0):
         # rBergomi variance process.
@@ -75,8 +67,8 @@ class rBergomi(object):
         self.eta = eta
         a = self.a
         t = self.t
-        V = xi * np.exp(eta * Y - 0.5 * eta**2 * t**(2 * a + 1))
-        return V
+        return xi * np.exp(eta * Y - 0.5 * eta**2 * t**(2 * a + 1))
+        #return xi * ne.evaluate('exp(eta * Y - 0.5 * eta**2 * t**(2 * a + 1))')
 
     def S(self, V, dZ, r, q, S0 = 1):
         # rBergomi price process.
@@ -93,4 +85,5 @@ class rBergomi(object):
         S = np.zeros_like(V)
         S[:,0] = S0
         S[:,1:] = S0 * np.exp(integral)
+        #S[:,1:] = S0 * ne.evaluate('exp(integral)')
         return S
