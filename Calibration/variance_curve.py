@@ -12,4 +12,4 @@ def g(t):
     
 def variance_curve(t):
     t = t * 12
-    return g(t)**2 + 2*t*z1**2*z2*z3*np.exp(-2*z2*np.exp(-z3*t)-z3*t)
+    return (z1 * np.exp(-z2 * np.exp(-z3 * t)))**2 + 2*t*z1**2*z2*z3*np.exp(-2*z2*np.exp(-z3*t)-z3*t)
