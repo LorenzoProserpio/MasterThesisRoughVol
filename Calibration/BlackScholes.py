@@ -30,7 +30,7 @@ def BSPut(S0, K, T, r, q, sigma):
     # q: annual yield
     # sigma: volatility (1 = 100%)
     
-    return BSCall(S0, K, T, r, sigma) + K*np.exp(-(r-q)*T) - S0
+    return BSCall(S0, K, T, r, q, sigma) + K*np.exp(-(r-q)*T) - S0
 
 def BSImpliedVol(S0, K, T, r, q, P, Option_type = 1, toll = 1e-10):
     
