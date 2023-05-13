@@ -138,7 +138,7 @@ def optimal_ab(r, q, tau, sigma_0, kappa, eta, theta, rho, L = 12):
 def precomputed_terms(r, q, tau, sigma_0, kappa, eta, theta, rho, L, N):
     # Auxiliary term precomputed
     
-    a,b = optimal_ab(r, tau, sigma_0, kappa, eta, theta, rho, L)
+    a,b = optimal_ab(r, q, tau, sigma_0, kappa, eta, theta, rho, L)
     aux = np.pi/(b-a)
     out = np.zeros(N-1)
     
