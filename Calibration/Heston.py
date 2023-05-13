@@ -113,10 +113,10 @@ def U_k_put(k, a, b):
     
     return 2./(b-a) * (psi_k(k, a, 0, a, b) - chi_k(k, a, 0, a, b))
 
-def optimal_ab(r, tau, sigma_0, kappa, eta, theta, rho, L = 12):
+def optimal_ab(r, q, tau, sigma_0, kappa, eta, theta, rho, L = 12):
     # Compute the optimal interval for the truncation
     aux = np.exp(-kappa* tau)
-    c1 =  (1 - aux) \
+    c1 =  (r-q)*tau + (1 - aux) \
             * (eta - sigma_0)/(2*kappa) - eta * tau / 2
 
     c2 = (sigma_0) / (4*kappa**3) * (4*kappa**2*(1+(rho*theta*tau-1)*aux) \
