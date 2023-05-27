@@ -6,7 +6,11 @@ Z3 = np.array([2.3126258447474375, 2.077549483492911, 2.1200577204482105, 2.6371
 
 # Compute the initial forward variance curve at a given time t
 # using the Gompertz function with precomputed parameters
-    
+
+def Gompertz(t, index = 0):
+    z1 = Z1[index]; z2 = Z2[index]; z3 = Z3[index];
+    return z1*np.exp(-z2 * np.exp(-z3 * t))
+
 def variance_curve(t, index = 0):
     z1 = Z1[index]; z2 = Z2[index]; z3 = Z3[index];
     return (z1 * np.exp(-z2 * np.exp(-z3 * t)))**2 + 2*t*z1**2*z2*z3*np.exp(-2*z2*np.exp(-z3*t)-z3*t)
