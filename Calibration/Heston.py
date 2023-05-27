@@ -23,7 +23,7 @@ def phi_hest(u, tau, sigma_0, kappa, eta, theta, rho):
     # u: argument of the function (where you want to evaluate)
     # tau: time to expiration
     # sigma_0, kappa, eta, theta, rho: Heston parameters 
-
+    
     alpha_hat = -0.5 * u * (u + 1j)
     beta = kappa - 1j * u * theta * rho
     gamma = 0.5 * theta ** 2
@@ -38,8 +38,6 @@ def phi_hest(u, tau, sigma_0, kappa, eta, theta, rho):
 def integral(x, tau, sigma_0, kappa, eta, theta, rho):
     
     # Pseudo-probabilities 
-    
-    # x: log-prices discounted
     
     integrand = (lambda u: np.real(np.exp((1j*u + 0.5)*x) * \
                                    phi_hest(u - 0.5j, tau, sigma_0, kappa, eta, theta, rho)) / \
@@ -56,7 +54,8 @@ def analytic_hest(S0, strikes, tau, r, q,  kappa, theta, rho, eta, sigma_0, opti
     a = np.log(S0/strikes) + (r-q)*tau 
     i = integral(a, tau, sigma_0, kappa, eta, theta, rho)
     
-    out = S0 * np.exp(-q*tau) - strikes * np.exp(-r*tau)/np.pi * i
+    out = S0 * np.exp(-q*tau) - np.sqrt(strikes*S0) * np.exp(-(r+q)*tau*0.5)/np.pi * i
+    out = np.array([out]).flatten()
     
     for k in range(len(out)):
         if options_type[k] == 0:
