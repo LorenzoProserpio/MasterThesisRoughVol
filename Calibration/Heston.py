@@ -249,7 +249,7 @@ def cost_function_generator(model, helpers, norm=False):
 #######################Simulation Heston################################
 
 def create_totems(base, start, end):
-    # Create the grid 
+    # create the grid 
     
     totems = np.ones(end-start+2)
     index = 1
@@ -261,11 +261,11 @@ def create_totems(base, start, end):
     return totems
 
 def calc_nu_bar(kappa, eta, theta):
-    # Compute v bar
+    # compute v bar
     return 4*kappa*eta/theta**2
 
 def x2_exp_var(nu_bar, kappa, theta, dt):
-    # Compute E[X_2] and Var[X_2]
+    # compute E[X_2] and Var[X_2]
     
     aux = kappa*dt/2.
     c1 = np.cosh(aux)/np.sinh(aux)
@@ -276,12 +276,12 @@ def x2_exp_var(nu_bar, kappa, theta, dt):
     return exp_x2, var_x2
 
 def Z_exp_var(nu_bar, exp_x2, var_x2):
-    # Compute E[Z] and Var[Z]
+    # compute E[Z] and Var[Z]
     
     return 4*exp_x2/nu_bar, 4*var_x2/nu_bar
 
 def xi_exp(nu_bar, kappa, theta, dt, totem):
-    # Compute E[\Xi] and E[\Xi^2]
+    # compute E[\Xi] and E[\Xi^2]
     
     z = 2*kappa*np.sqrt(totem) / (theta**2*np.sinh(kappa*dt/2.))
     iv_pre = ive(nu_bar/2.-1., z)    
@@ -291,7 +291,7 @@ def xi_exp(nu_bar, kappa, theta, dt, totem):
     return exp_xi, exp_xi2
 
 def create_caches(base, start, end, kappa, eta, theta, dt):
-    # Precompute the caches for IV*
+    # precompute the caches for IV*
     
     totems = create_totems(base, start, end)
     caches_exp = np.zeros(end-start+2)
@@ -311,7 +311,7 @@ def create_caches(base, start, end, kappa, eta, theta, dt):
     return totems, caches_exp, caches_var
 
 def x1_exp_var(kappa, theta, dt, vt, vT):
-    # Compute E[X_1] and Var[X_1]
+    # compute E[X_1] and Var[X_1]
     
     aux = kappa*dt/2.
     c1 = np.cosh(aux)/np.sinh(aux)
@@ -324,14 +324,14 @@ def x1_exp_var(kappa, theta, dt, vt, vT):
     return exp_x1, var_x1
 
 def lin_interp(vtvT, totems, caches_exp, caches_var):
-    # Compute linear interpolation for value not in caches
+    # compute linear interpolation for value not in caches
     
     exp_int = np.interp(vtvT, totems, caches_exp)
     var_int = np.interp(vtvT, totems, caches_var)
     return exp_int, var_int
 
 def sample_vT(vt, dt, kappa, theta, nu_bar):
-    # Sample vT from a noncentral chisquare (given vt)
+    # sample vT from a noncentral chisquare (given vt)
     
     aux = (theta**2*(1-np.exp(-kappa*dt)))/(4*kappa)
     n = np.exp(-kappa*dt)/aux *vt
