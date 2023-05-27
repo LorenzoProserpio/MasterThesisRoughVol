@@ -31,7 +31,7 @@ def psi_p(psi, ev, u):
 
 # functions for K_i, K_ii and K_01
 def Gi(eta, alpha, dt, i):
-    return np.sqrt(2*H)*eta/alpha * dt**alpha * ((i+1)**alpha - i**alpha)
+    return np.sqrt(2*alpha-1)*eta/alpha * dt**alpha * ((i+1)**alpha - i**alpha)
 
 def Gii(eta, H, dt, i):
     aux = 2*H
