@@ -126,11 +126,7 @@ def optimal_ab(r, q, tau, sigma_0, kappa, eta, theta, rho, L = 12):
         + eta/(8*kappa**3)*(8*kappa**3*tau - 8*kappa**2*(1+ rho*theta*tau +(rho*theta*tau-1)*aux)\
                             + 2*kappa*((1+2*aux)*theta**2*tau+8*(1-aux)*rho*theta)\
                             + theta**2*(aux*aux+4*aux-5))
-    
-    
-    a = c1 - L * np.abs(c2)**.5
-    b = c1 + L * np.abs(c2)**.5
-    
+       
     
     return c1 - 12*np.sqrt(np.abs(c2)), c1 + 12*np.sqrt(np.abs(c2))
 

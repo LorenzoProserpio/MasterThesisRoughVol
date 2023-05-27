@@ -13,12 +13,16 @@ TENOR = np.array(pd.read_csv("hist_spx.csv")["Exp Date"])
 def r(x, index = 0):
     rates = np.array(data[dates[index]])/100
     cs = CubicSpline(tenor, rates)
+	if(x>20):
+		return cs(20)
     return cs(x)
     
 def drift(x, index = 0):
     S0 = spot[index]
     d = -np.log(S0/F).flatten()/TENOR
-    cs = CubicSpline(TENOR, d)
+	cs = CubicSpline(TENOR, d)
+	if(x>20):
+		return cs(20)
     return cs(x)
     
 def q(x, index = 0):
