@@ -1,7 +1,137 @@
 import numpy as np
-from variance_curve import variance_curve
 import ImpliedDrift
+import Heston
+import BlackScholes
+import scipy.integrate
+
+from variance_curve import variance_curve, Gompertz
 from scipy.special import gamma
+
+#######################Padè rHeston################################
+
+def Pade33(u, t, H, rho, theta):
+    alpha = H + 0.5
+  
+    aa = np.sqrt(u * (u + (0+1j)) - rho**2 * u**2)
+    rm = -(0+1j) * rho * u - aa
+    rp = -(0+1j) * rho * u + aa
+  
+    b1 = -u*(u+1j)/(2 * gamma(1+alpha))
+    b2 = (1-u*1j) * u**2 * rho/(2* gamma(1+2*alpha))               
+    b3 = gamma(1+2*alpha)/gamma(1+3*alpha) * \
+        (u**2*(1j+u)**2/(8*gamma(1+alpha)**2)+(u+1j)*u**3*rho**2/(2*gamma(1+2*alpha)))
+
+    g0 = rm
+    g1 = -rm/(aa*gamma(1-alpha))
+    g2 = rm/aa**2/gamma(1-2*alpha) * \
+         (1 + rm/(2*aa)*gamma(1-2*alpha)/gamma(1-alpha)**2)
+
+    den = g0**3 +2*b1*g0*g1-b2*g1**2+b1**2*g2+b2*g0*g2
+
+    p1 = b1
+    p2 = (b1**2*g0**2 + b2*g0**3 + b1**3*g1 + b1*b2*g0*g1 - \
+          b2**2*g1**2 +b1*b3*g1**2 +b2**2*g0*g2 - b1*b3*g0*g2)/den
+    q1 = (b1*g0**2 + b1**2*g1 - b2*g0*g1 + b3*g1**2 - b1*b2*g2 -b3*g0*g2)/den
+    q2 = (b1**2*g0 + b2*g0**2 - b1*b2*g1 - b3*g0*g1 + b2**2*g2 - b1*b3*g2)/den
+    q3 = (b1**3 + 2*b1*b2*g0 + b3*g0**2 -b2**2*g1 +b1*b3*g1 )/den
+    p3 = g0*q3
+
+    y = t**alpha
+    
+    return (p1*y + p2*y**2 + p3*y**3)/(1 + q1*y + q2*y**2 + q3*y**3)
+
+# def DH_Pade33(u, t, H, rho, theta):
+#     alpha = H + 0.5
+    
+#     aa = np.sqrt(u * (u + (0+1j)) - rho**2 * u**2)
+#     rm = -(0+1j) * rho * u - aa
+#     rp = -(0+1j) * rho * u + aa
+  
+#     b1 = -u*(u+1j)/(2 * gamma(1+alpha))
+#     b2 = (1-u*1j) * u**2 * rho/(2* gamma(1+2*alpha))               
+#     b3 = gamma(1+2*alpha)/gamma(1+3*alpha) * \
+#         (u**2*(1j+u)**2/(8*gamma(1+alpha)**2)+(u+1j)*u**3*rho**2/(2*gamma(1+2*alpha)))
+
+#     g0 = rm
+#     g1 = -rm/(aa*gamma(1-alpha))
+#     g2 = rm/aa**2/gamma(1-2*alpha) * (1 + rm/(2*aa)*gamma(1-2*alpha)/gamma(1-alpha)**2)
+
+#     den = g0**3 +2*b1*g0*g1-b2*g1**2+b1**2*g2+b2*g0*g2
+
+#     p1 = b1
+#     p2 = (b1**2*g0**2 + b2*g0**3 + b1**3*g1 + b1*b2*g0*g1 - b2**2*g1**2 +b1*b3*g1**2 \
+#           +b2**2*g0*g2 - b1*b3*g0*g2)/den
+#     q1 = (b1*g0**2 + b1**2*g1 - b2*g0*g1 + b3*g1**2 - b1*b2*g2 -b3*g0*g2)/den
+#     q2 = (b1**2*g0 + b2*g0**2 - b1*b2*g1 - b3*g0*g1 + b2**2*g2 - b1*b3*g2)/den
+#     q3 = (b1**3 + 2*b1*b2*g0 + b3*g0**2 -b2**2*g1 +b1*b3*g1 )/den
+#     p3 = g0*q3
+
+#     y = t**alpha
+
+#     h_pade = (p1*y + p2*y**2 + p3*y**3)/(1 + q1*y + q2*y**2 + q3*y**3)
+
+#     res = 1/2*(h_pade-rm)*(h_pade-rp)
+
+#     return res
+
+def phi_rhest(u, t, H, rho, theta, N = 1000):
+    if u == 0:
+        return 1.
+    
+    term1 = 1j*u*t*((1j*u-1)*0.5*Gompertz(t)**2)
+    alpha = H + 0.5
+    dt = t/N
+    tj = np.linspace(0,N,N+1,endpoint = True)*dt
+    
+    x = theta**(1./alpha)*tj
+    xi = np.flip(variance_curve(tj))
+    
+    aux = Pade33(u, x, H, rho, theta)
+    term2 = 1j*u*theta*rho*np.matmul(aux,xi)*dt
+    term3 = theta**2*0.5*np.matmul(aux**2,xi)*dt
+    return np.exp(term1 + term2 + term3)    
+
+# def phi_rhest(u, t, H, rho, theta, N = 1000):
+#     if u == 0:
+#         return 1.
+    
+#     alpha = H + 0.5
+#     dt = t/N
+#     tj = np.linspace(0,N,N+1,endpoint = True)*dt
+    
+#     x = theta**(1./alpha)*tj
+#     xi = np.flip(variance_curve(tj))
+#     return np.exp(np.matmul(DH_Pade33(u, x, H, rho, theta),xi)*dt)    
+    
+
+def integral(x, t, H, rho, theta):
+    
+    # Pseudo-probabilities 
+
+    integrand = (lambda u: np.real(np.exp((1j*u)*x) * \
+                                   phi_rhest(u - 0.5j, t, H, rho, theta)) / \
+                (u**2 + 0.25))
+    
+    i, err = scipy.integrate.quad_vec(integrand, 0, np.inf)
+    
+    return i
+
+def analytic_rhest(S0, strikes, t, H, rho, theta, options_type):
+    
+    # Pricing of vanilla options under "analytic" rHeston
+    
+    a = np.log(S0/strikes) + ImpliedDrift.drift(t)*t 
+    i = integral(a, t, H, rho, theta)
+    r = ImpliedDrift.r(t)
+    q = ImpliedDrift.q(t)
+    out = S0 * np.exp(-q*t) - np.sqrt(S0*strikes) * np.exp(-(r+q)*t*0.5)/np.pi * i
+    out = np.array([out]).flatten()
+
+    for k in range(len(options_type)):
+        if options_type[k] == 0:
+            out[k] = Heston.call_put_parity(out[k], S0, strikes[k], r, q, t)
+    
+    return out
 
 #######################Simulation rHeston################################
 
