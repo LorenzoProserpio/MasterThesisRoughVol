@@ -9,6 +9,7 @@ F = np.array(pd.read_csv("implied_forward.csv"))
 spot = np.array(pd.read_csv("spot.csv").Spot)
 TENOR = np.array(pd.read_csv("hist_spx.csv")["Exp Date"])
 
+#x must be np.array even if it is only a number
 
 def r(x, index = 0):
     rates = np.array(data[dates[index]])/100
