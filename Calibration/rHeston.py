@@ -6,6 +6,12 @@ import scipy.integrate
 
 from variance_curve import variance_curve, Gompertz
 from scipy.special import gamma
+from scipy.interpolate import CubicSpline
+from scipy.stats import norm
+
+du = 1e-4
+GRID = np.linspace(0,10,int(1./du))
+
 
 ####################### Padè rHeston ################################
 
@@ -45,11 +51,43 @@ def Pade33(u, t, H, rho, theta):
     
     return (p1*y + p2*y**2 + p3*y**3)/(1 + q1*y + q2*y**2 + q3*y**3)
 
-def phi_rhest(u, t, H, rho, theta, N = 1000):    
+def DH_Pade33(u, x, H, rho, theta):
+    alpha = H + 0.5
+    
+    aa = np.sqrt(u * (u + 1j) - rho**2 * u**2)
+    rm = -1j * rho * u - aa
+    rp = -1j * rho * u + aa
+
+    b1 = -u*(u+1j)/(2 * gamma(1+alpha))
+    b2 = (1-u*1j) * u**2 * rho/(2* gamma(1+2*alpha))               
+    b3 = gamma(1+2*alpha)/gamma(1+3*alpha) * \
+              (u**2*(1j+u)**2/(8*gamma(1+alpha)**2)+(u+1j)*u**3*rho**2/(2*gamma(1+2*alpha)))
+
+    g0 = rm
+    g1 = -rm/(aa*gamma(1-alpha))
+    g2 = rm/aa**2/gamma(1-2*alpha) * (1 + rm/(2*aa)*gamma(1-2*alpha)/gamma(1-alpha)**2)
+
+    den = g0**3 +2*b1*g0*g1-b2*g1**2+b1**2*g2+b2*g0*g2
+
+    p1 = b1
+    p2 = (b1**2*g0**2 + b2*g0**3 + b1**3*g1 + b1*b2*g0*g1 - b2**2*g1**2 +b1*b3*g1**2 +b2**2*g0*g2 - b1*b3*g0*g2)/den
+    q1 = (b1*g0**2 + b1**2*g1 - b2*g0*g1 + b3*g1**2 - b1*b2*g2 -b3*g0*g2)/den
+    q2 = (b1**2*g0 + b2*g0**2 - b1*b2*g1 - b3*g0*g1 + b2**2*g2 - b1*b3*g2)/den
+    q3 = (b1**3 + 2*b1*b2*g0 + b3*g0**2 -b2**2*g1 +b1*b3*g1 )/den
+    p3 = g0*q3
+
+    y = x**alpha
+        
+    hpade = (p1*y + p2*y**2 + p3*y**3)/(1 + q1*y + q2*y**2 + q3*y**3)
+
+    res = 0.5*(hpade-rm)*(hpade-rp)
+
+    return res  
+
+def phi_rhest(u, t, H, rho, theta, N = 100):    
     if u == 0:
         return 1.
     
-    term1 = 1j*u*t*((1j*u-1)*0.5*Gompertz(t)**2)
     alpha = H + 0.5
     dt = t/N
     tj = np.linspace(0,N,N+1,endpoint = True)*dt
@@ -57,16 +95,76 @@ def phi_rhest(u, t, H, rho, theta, N = 1000):
     x = theta**(1./alpha)*tj
     xi = np.flip(variance_curve(tj))
     
-    aux = Pade33(u, x, H, rho, theta)
-    term2 = 1j*u*theta*rho*np.matmul(aux,xi)*dt
-    term3 = theta**2*0.5*np.matmul(aux**2,xi)*dt
-    return np.exp(term1 + term2 + term3)    
+    aux = DH_Pade33(u, x, H, rho, theta)
+    
+    return np.exp(np.matmul(aux,xi)*dt)
 
-####################### Analytic rHeston ################################
+def DH_Pade33_vec(u, x, H, rho, theta):
+    alpha = H + 0.5
+    
+    aa = np.sqrt(u * (u + 1j) - rho**2 * u**2)
+    rm = -1j * rho * u - aa
+    rp = -1j * rho * u + aa
+
+    b1 = -u*(u+1j)/(2 * gamma(1+alpha))
+    b2 = (1-u*1j) * u**2 * rho/(2* gamma(1+2*alpha))               
+    b3 = gamma(1+2*alpha)/gamma(1+3*alpha) * \
+              (u**2*(1j+u)**2/(8*gamma(1+alpha)**2)+(u+1j)*u**3*rho**2/(2*gamma(1+2*alpha)))
+
+    g0 = rm
+    g1 = -rm/(aa*gamma(1-alpha))
+    g2 = rm/aa**2/gamma(1-2*alpha) * (1 + rm/(2*aa)*gamma(1-2*alpha)/gamma(1-alpha)**2)
+
+    den = g0**3 +2*b1*g0*g1-b2*g1**2+b1**2*g2+b2*g0*g2
+
+    p1 = b1
+    p2 = (b1**2*g0**2 + b2*g0**3 + b1**3*g1 + b1*b2*g0*g1 - b2**2*g1**2 +b1*b3*g1**2 +b2**2*g0*g2 - b1*b3*g0*g2)/den
+    q1 = (b1*g0**2 + b1**2*g1 - b2*g0*g1 + b3*g1**2 - b1*b2*g2 -b3*g0*g2)/den
+    q2 = (b1**2*g0 + b2*g0**2 - b1*b2*g1 - b3*g0*g1 + b2**2*g2 - b1*b3*g2)/den
+    q3 = (b1**3 + 2*b1*b2*g0 + b3*g0**2 -b2**2*g1 +b1*b3*g1 )/den
+    p3 = g0*q3
+
+    y = x**alpha
+    y2 = y**2
+    y3 = y**3
+    
+    size_ = len(u)
+    Y = np.tile(y, (size_,1)).transpose()
+    Y2 = np.tile(y2, (size_,1)).transpose()
+    Y3 = np.tile(y3, (size_,1)).transpose()
+        
+    hpade = (Y*p1 + Y2*p2 + Y3*p3)/(1 + Y*q1 + Y2*q2 + Y3*q3)
+
+    res = 0.5*(hpade-rm)*(hpade-rp)
+
+    return res  
+
+def phi_rhest_vec(u, t, H, rho, theta, N = 500):    
+    
+    mask = (u == 0)
+    
+    alpha = H + 0.5
+    dt = t/N
+    tj = np.linspace(0,N,N+1,endpoint = True)*dt
+    
+    x = theta**(1./alpha)*tj
+    xi = np.flip(variance_curve(tj))
+    
+    res = np.zeros(len(u), dtype = complex)
+    
+    if mask.any():
+        aux = DH_Pade33_vec(u[~mask], x, H, rho, theta)
+        res[~mask] = np.exp(np.matmul(xi,aux)*dt)
+        res[mask] = 1.
+    else:
+        aux = DH_Pade33_vec(u, x, H, rho, theta)
+        res = np.exp(np.matmul(xi,aux)*dt)
+    
+    return res
+
+# ####################### Analytic rHeston ################################
 
 def integral(x, t, H, rho, theta):
-    
-    # Pseudo-probabilities 
 
     integrand = (lambda u: np.real(np.exp((1j*u)*x) * \
                                    phi_rhest(u - 0.5j, t, H, rho, theta)) / \
@@ -76,11 +174,20 @@ def integral(x, t, H, rho, theta):
     
     return i
 
+# def integral_vec(x, t, H, rho, theta, grid = GRID):
+#     aux = (np.tile(grid, (len(x),1)).transpose()*x).transpose()
+    
+#     i = np.real(np.exp(1j*aux)*phi_rhest_vec(grid - 0.5j, t, H, rho, theta)) / \
+#         (grid**2 + 0.25) 
+    
+#     i = i.sum(axis = 1)*(grid[1]-grid[0])
+#     return i
+
 def analytic_rhest(S0, strikes, t, H, rho, theta, options_type):
     
-    # Pricing of vanilla options under "analytic" rHeston
+    # Pricing of vanilla options under "analytic" rHeston using Lewis Formula
     
-    a = np.log(S0/strikes) + ImpliedDrift.drift(t)*t 
+    a = np.log(S0/strikes) + ImpliedDrift.drift(t)*t
     i = integral(a, t, H, rho, theta)
     r = ImpliedDrift.r(t)
     q = ImpliedDrift.q(t)
@@ -91,101 +198,77 @@ def analytic_rhest(S0, strikes, t, H, rho, theta, options_type):
         if options_type[k] == 0:
             out[k] = Heston.call_put_parity(out[k], S0, strikes[k], r, q, t)
     
-    return out
+    if (out < 0).any():
+        out[out < 0] = 0.
+        
+    return out    
 
-###################### COS METHOD Le Floch #########################
+# def analytic_rhest_vec(S0, strikes, t, H, rho, theta, options_type):
     
-def chi_k(k, c, d, a, b):
-    # Auxiliary function for U_k
+#     # Pricing of vanilla options under "analytic" rHeston using Lewis Formula
     
-    aux_1 = k*np.pi/(b-a)
-    aux_2 = np.exp(d)
-    aux_3 = np.exp(c)
-    
-    return  (np.cos(aux_1*(d-a))*aux_2 - \
-            aux_3 + \
-            aux_1*np.sin(aux_1*(d-a))*aux_2) / (1+aux_1**2)
+#     a = np.log(S0/strikes) + ImpliedDrift.drift(t)*t
+#     i = integral_vec(a, t, H, rho, theta)
+#     r = ImpliedDrift.r(t)
+#     q = ImpliedDrift.q(t)
+#     out = S0 * np.exp(-q*t) - np.sqrt(S0*strikes) * np.exp(-(r+q)*t*0.5)/np.pi * i
+#     out = np.array([out]).flatten()
 
-def psi_k(k, c, d, a, b):    
-    # Auxiliary function for U_k
+#     for k in range(len(options_type)):
+#         if options_type[k] == 0:
+#             out[k] = Heston.call_put_parity(out[k], S0, strikes[k], r, q, t)
     
-    if k == 0:
-        return d - c
-    
-    aux = k*np.pi/(b-a)
-    return np.sin(aux*(d-a)) / aux
-    
-def U_k_put(k, a, b):
-    # Auxiliary for cos_method
-    
-    return 2./(b-a) * (psi_k(k, a, 0, a, b) - chi_k(k, a, 0, a, b))
+#     if (out < 0).any():
+#         out[out < 0] = 0.
+        
+#     return out 
 
-def optimal_ab(t, H, theta, rho, L = 12):
-    # Compute the optimal interval for the truncation
-    
-    c1 =  (ImpliedDrift.drift(t)-Gompertz(t)**2*0.5) * t
-    
-    aux = theta*Gompertz(1000)**2
-    aux2 = H+1.5
-    aux3 = gamma(aux2)
-    c2 = aux*t**aux2*rho/(aux2*aux3) - theta*aux*t**(2*H+2)*0.25/((2*H+2)*aux3**2)
-    
-    return c1 - 12*np.sqrt(np.abs(c2)), c1 + 12*np.sqrt(np.abs(c2))
+#######################Decomposition Formula#############################
 
+# def rt_ut(t, H, rho, theta, N = 1000):        
+    
+#     alpha = H + 0.5
+#     dt = t/N
+#     tj = np.linspace(0,N,N+1,endpoint = True)*dt
+#     xi = variance_curve(tj)
+#     tj = np.flip(tj)**alpha
+    
+#     rt = 0.5*(theta/gamma(alpha+1.))**2*np.matmul(xi,tj)*dt
+#     ut = rho*theta/gamma(alpha+1.)*np.matmul(xi,tj**2)*dt    
+    
+#     return rt, ut
 
-def precomputed_terms(t, H, theta, rho, L, N):
-    # Auxiliary term precomputed
+# def V_K_H(S0, strikes, t, H, rho, theta, r, q):
+#     wt = t*Gompertz(t)**2
+#     xt = np.log(S0) 
+#     aux = np.sqrt(wt)
     
-    a,b = optimal_ab(t, H, theta, rho, L)
+#     d1 = (- np.log(strikes) + xt - r*t + 0.5*wt)/aux
+#     d2 = d1 - aux
+#     aux2 = np.exp(xt - 0.5*d1**2)/(4.*np.sqrt(2*np.pi*wt))
     
-    aux = np.pi/(b-a)
-    out = np.zeros(N-1)
+#     V = S0*np.exp(-q*t)*norm.cdf(d1) - strikes*np.exp(-r*t)*norm.cdf(d2)
+#     K = aux2 * (d1**2 - aux*d1 -1)/wt
+#     H = 2 * aux2 * (1-d1/aux)
     
-    for k in range(1,N):
-        out[k-1] = np.real(np.exp(-1j*k*a*aux)*\
-                         phi_rhest(k*aux, t, H, rho, theta)*\
-                         np.exp(1j*k*aux*ImpliedDrift.drift(t)*t))
-    
-    return out, a, b
+#     return V, K, H
 
-def V_k_put(k, a, b, S0, K, z):
-    # V_k coefficients for puts   
+# def rH_approx(S0, strikes, t, H, rho, theta, options_type):
+#     r = ImpliedDrift.r(t)
+#     q = ImpliedDrift.q(t)
+#     rt, ut = rt_ut(t, H, rho, theta)
+#     V, K, H = V_K_H(S0, strikes, t, H, rho, theta, r, q)
     
-    return 2./(b-a)*(K*psi_k(k, a, z, a, b) - S0*chi_k(k, a, z, a, b))
-
-def cos_method_Heston_LF(precomp_term, a, b, t,  H, theta, rho, S0,\
-                         strikes, N, options_type, L=12):
-    # Cosine Fourier Expansion for evaluating vanilla options under rHeston using LeFloch correction
-    # Should be better for deep otm options.
+#     out = V + K*rt + H*ut
     
-    # precomp_term: precomputed terms from the function precomputed_terms
-    # a,b: extremes of the interval to approximate
-    # t: time to expiration (annualized) (must be a number)
-    # H, theta, rho: rHeston parameters
-    # S0: initial spot price
-    # strikes: np.array of strikes
-    # N: number of terms of the truncated expansion
-    # options_type: binary np.array (1 for calls, 0 for puts)
-    # L: truncation level
-
-    z = np.log(strikes/S0)
+#     for k in range(len(options_type)):
+#         if options_type[k] == 0:
+#             out[k] = Heston.call_put_parity(out[k], S0, strikes[k], r, q, t)
     
-    r = ImpliedDrift.r(t)
-    q = ImpliedDrift.q(t)
-    
-    out = 0.5 * V_k_put(0, a, b, S0, strikes, z)
-    
-    for k in range(1,N):
-        out = out + precomp_term[k-1]*V_k_put(k, a, b, S0, strikes, z)
-    
-    D = np.exp(-r*t)
-    out = out*D
-    
-    for k in range(len(strikes)):
-        if options_type[k] == 1:
-            out[k] = Heston.put_call_parity(out[k], S0, strikes[k], r, q, t)
-
-    return out
+#     if (out < 0).any():
+#         out[out < 0] = 0.
+        
+#     return out 
 
 #######################Simulation rHeston################################
 
