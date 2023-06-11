@@ -56,7 +56,7 @@ def analytic_hest(S0, strikes, tau, r, q,  kappa, theta, rho, eta, sigma_0, opti
     a = np.log(S0/strikes) + (r-q)*tau 
     i = integral(a, tau, sigma_0, kappa, eta, theta, rho)
     
-    out = S0 * np.exp(-q*tau) - np.sqrt(S0*strikes) * np.exp(-(r+q)*tau*0.5)/np.pi * i
+    out = S0 * np.exp(-q*tau) - strikes * np.exp(-r*tau)/np.pi * i
     out = np.array([out]).flatten()
     
     for k in range(len(out)):
