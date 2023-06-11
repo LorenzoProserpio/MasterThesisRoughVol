@@ -84,10 +84,11 @@ def DH_Pade33(u, x, H, rho, theta):
 
     return res  
 
-def phi_rhest(u, t, H, rho, theta, N = 100):    
+def phi_rhest(u, t, H, rho, theta):    
     if u == 0:
         return 1.
     
+    N = int(t*365)
     alpha = H + 0.5
     dt = t/N
     tj = np.linspace(0,N,N+1,endpoint = True)*dt
@@ -139,7 +140,7 @@ def DH_Pade33_vec(u, x, H, rho, theta):
 
     return res  
 
-def phi_rhest_vec(u, t, H, rho, theta, N = 500):    
+def phi_rhest_vec(u, t, H, rho, theta, N = 1000):    
     
     mask = (u == 0)
     
